@@ -12,7 +12,7 @@ Then remux the remaining part of the video, producing clip #2.
 
 You might have realized there is no ending point involved. Yes, currently you cannot set the ending point. This "feature" will become necessary after I can make it work. 
 
-It then merges the clip with [concat muxer](https://ffmpeg.org/ffmpeg-formats.html#concat-1), which allows to concatenate multiple videos with streamcopy under certain *criteria*. This produces the final clip and the two intermediate clips are deleted.
+It then merges the clips with [concat muxer](https://ffmpeg.org/ffmpeg-formats.html#concat-1), which allows to concatenate multiple videos with streamcopy under certain *criteria*. This produces the final clip and the two intermediate clips are deleted.
 
 Since both clips are produced from the same video, they have the same streams which meets the criteria. But unfortunately the final clip do not play on MPC-HC, despite the two intermeidate clips work well.
 
