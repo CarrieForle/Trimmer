@@ -288,21 +288,24 @@ namespace Trimmer.Trimmer
                         "-y",
                         "-i", intermediatePath,
                         "-ss", from.ToString(),
-                        "-i", originalVideoPath,
                     },
                 };
 
-                if (to == Timecode.End())
+                if (to != Timecode.End())
                 {
-                    Array.ForEach([
-                        "-c", "copy",
-                        "-map", "0:v",
-                        "-map", "1:a?",
-                        "-map", "1:s?",
-                        "-f", outputContainer,
-                        dst,
-                    ], info.ArgumentList.Add);
+                    info.ArgumentList.Add("-to");
+                    info.ArgumentList.Add(to.ToString());
                 }
+
+                Array.ForEach([
+                    "-i", originalVideoPath,
+                    "-c:v", "copy",
+                    "-map", "0:v",
+                    "-map", "1:a?",
+                    "-map", "1:s?",
+                    "-f", outputContainer,
+                    dst,
+                ], info.ArgumentList.Add);
 
                 await RunAndWaitAndThrowOnError(info);
             }
@@ -375,6 +378,8 @@ namespace Trimmer.Trimmer
             //
             // See https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.standardoutput?view=net-9.0#remarks
             string err = await process.StandardError.ReadToEndAsync();
+
+            Console.WriteLine(err);
 
             await process.WaitForExitAsync();
 
