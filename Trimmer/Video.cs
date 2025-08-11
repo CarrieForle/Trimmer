@@ -129,9 +129,9 @@ namespace Trimmer.Trimmer
 
                         if (parts[2] == "video")
                         {
-                            var stream_index = int.Parse(parts[1]);
+                            var streamIndex = int.Parse(parts[1]);
                             var encoder = parts[3][(parts[3].IndexOf(' ') + 1)..];
-                            encoders.Add((stream_index, encoder));
+                            encoders.Add((streamIndex, encoder));
                         }
                     }
 
@@ -336,7 +336,7 @@ namespace Trimmer.Trimmer
                 // See https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.standardoutput?view=net-9.0#remarks
                 process.StandardOutput.Close();
 
-                await WaitAndThrowOnError(process);
+                await WaitAndThrowOnError(process, info.FileName);
 
                 return res;
             }
@@ -353,7 +353,7 @@ namespace Trimmer.Trimmer
 
             using (var process = Process.Start(info)!)
             {
-                await WaitAndThrowOnError(process);
+                await WaitAndThrowOnError(process, info.FileName);
             }
         }
 
@@ -364,7 +364,11 @@ namespace Trimmer.Trimmer
             info.UseShellExecute = false;
         }
 
-        private static async Task WaitAndThrowOnError(Process process)
+        // Get process name from the argument rather than
+        // Process.ProcessName because the process
+        // may end before we access it, which will cause
+        // an exception.
+        private static async Task WaitAndThrowOnError(Process process, string processName)
         {
             // StandardError must be read before waiting,
             // otherwise deadlock might occur.
@@ -376,17 +380,15 @@ namespace Trimmer.Trimmer
 
             if (process.ExitCode != 0)
             {
-                throw new InvalidDataException($"{process.ProcessName} failed:\n{err}");
+                throw new InvalidDataException($"{processName} failed:\n{err}");
             }
         }
 
         /// <summary>
-        /// Get the container (format) of a video.
+        /// Get the container (format) of a video file.
         /// It will try to deduce from filename, otherwise
-        /// use ffprobe to get the first available format.
+        /// use ffprobe to get the first available container.
         /// </summary>
-        /// <param name="src">The path of video file</param>
-        /// <returns>The container of the video</returns>
         private static async Task<string> GetContainer(string src)
         {
             if (Path.HasExtension(src))
