@@ -1,3 +1,4 @@
+using System.Reflection.PortableExecutable;
 using System.Text.RegularExpressions;
 
 namespace Trimmer.Trimmer
@@ -29,6 +30,7 @@ namespace Trimmer.Trimmer
             {
                 throw new Exception("Invalid timecode.");
             }
+            
             List<int> parts = [0, 0];
 
             for (int i = 0; i < 2; i++)
@@ -111,16 +113,38 @@ namespace Trimmer.Trimmer
 
         public static bool operator >(Timecode a, Timecode b)
         {
-            return a.Hour > b.Hour ||
-                a.Minute > b.Minute ||
-                a.Second > b.Second;
+            long min1 = (long)a.Hour + a.Minute;
+            long min2 = (long)b.Hour + b.Minute;
+
+            if (min1 > min2)
+            {
+                return true;
+            }
+
+            if (min1 == min2)
+            {
+                return a.Second > b.Second;
+            }
+
+            return false;
         }
 
         public static bool operator <(Timecode a, Timecode b)
         {
-            return a.Hour < b.Hour ||
-                a.Minute < b.Minute ||
-                a.Second < b.Second;
+            long min1 = (long)a.Hour + a.Minute;
+            long min2 = (long)b.Hour + b.Minute;
+
+            if (min1 < min2)
+            {
+                return true;
+            }
+
+            if (min1 == min2)
+            {
+                return a.Second < b.Second;
+            }
+
+            return false;
         }
 
         public static bool operator >=(Timecode a, Timecode b)

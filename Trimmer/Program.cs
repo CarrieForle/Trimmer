@@ -30,10 +30,10 @@ namespace Trimmer.Trimmer
         {
             Console.Write("Finding keyframe...");
 
-            var keyframe_task = FindKeyFrameAfter(start, src);
-            var codecs_task = GetVideoCodecs(src);
+            var keyframe_task = FindSplitFrameAfter(start, src);
+            var codecs_task = GetVideoEncoders(src);
 
-            var keyframe = await keyframe_task.ConfigureAwait(false);
+            var splitFrame = await keyframe_task.ConfigureAwait(false);
             var codecs = await codecs_task.ConfigureAwait(false);
 
             Console.WriteLine("Done");
@@ -46,14 +46,14 @@ namespace Trimmer.Trimmer
                 Console.Write("Encoding and remuxing...");
 
                 await Task.WhenAll([
-                    Encode(src, encode_dst, codecs, start, keyframe),
-                    Remux(src, remux_dst, keyframe, end),
+                    EncodeVideo(src, encode_dst, codecs, start, splitFrame.EncodeFrame),
+                    RemuxVideo(src, remux_dst, splitFrame.RemuxFrame, end),
                     ]).ConfigureAwait(false);
 
                 Console.WriteLine("Done");
                 Console.Write("Merging clips...");
 
-                await Merge(encode_dst, remux_dst, dst);
+                await Merge(encode_dst, remux_dst, src, start, end, dst);
 
                 Console.WriteLine("Done");
                 Console.WriteLine($"Your video is stored at {dst}");
