@@ -1,4 +1,3 @@
-using System.Reflection.PortableExecutable;
 using System.Text.RegularExpressions;
 
 namespace Trimmer.Trimmer
@@ -161,7 +160,8 @@ namespace Trimmer.Trimmer
         {
             if (this == end)
             {
-                throw new InvalidOperationException("Cannot call this on End Timecode.");
+                // throw new InvalidOperationException("Cannot call this on End Timecode.");
+                return "Timecode.End";
             }
 
             return timecode;

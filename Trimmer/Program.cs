@@ -1,75 +1,97 @@
 ﻿using System.Globalization;
+using System.CommandLine;
+using System.CommandLine.Parsing;
 
 namespace Trimmer.Trimmer
 {
-    using static Video;
-    
     class Program
     {
-        private static async Task Main(string[] args)
+        private static async Task<int> Main(string[] args)
         {
             // Turkiye Test
             CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
             CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 
-            var start = new Timecode("00:01:00.32312");
-            var src = Path.GetFullPath(@"src.mp4");
-            var dst = Path.GetFullPath(@"dst.mp4");
+            var rootCommand = new RootCommand("Create clips from a video");
 
+            var fromOpt = new Option<Timecode>("--from", ["-ss"])
+            {
+                Description = "The starting timecode of the video.",
+                CustomParser = ParseTimecode,
+                DefaultValueFactory = _ => Timecode.Zero(),
+            };
+
+            var toOpt = new Option<Timecode>("--to", ["-to"])
+            {
+                Description = "The ending timecode of the video.",
+                CustomParser = ParseTimecode,
+                DefaultValueFactory = _ => Timecode.End(),
+            };
+
+            var srcArg = new Argument<FileInfo>("src")
+            {
+                Description = "The path of the source video file.",
+            };
+
+            srcArg.AcceptExistingOnly();
+
+            var outputArg = new Argument<string>("output")
+            {
+                Description = "The path of output video file.",
+            };
+
+            rootCommand.Options.Add(fromOpt);
+            rootCommand.Options.Add(toOpt);
+            rootCommand.Arguments.Add(srcArg);
+            rootCommand.Arguments.Add(outputArg);
+
+            ParseResult parseResult = rootCommand.Parse(args);
+
+            foreach (ParseError parseError in parseResult.Errors)
+            {
+                Console.Error.WriteLine(parseError.Message);
+            }
+
+            rootCommand.SetAction(async (ParseResult) =>
+            {
+                var start = ParseResult.GetValue(fromOpt)!;
+                var end = ParseResult.GetValue(toOpt)!;
+
+                var src = ParseResult.GetValue(srcArg)!;
+                var dst = ParseResult.GetValue(outputArg)!;
+
+                var video = new Video(src.FullName);
+
+                try
+                {
+                    await video.SmartTrim(start, end, dst).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    Console.Error.WriteLine(e);
+                }
+            });
+
+            return await parseResult.InvokeAsync();
+        }
+
+        private static Timecode? ParseTimecode(ArgumentResult result)
+        {
+            if (result.Tokens.Count != 1)
+            {
+                result.AddError("Invalid syntax");
+                return null;
+            }
             try
             {
-                await SmartTrim(src, dst, start, Timecode.End());
+                return new Timecode(result.Tokens[0].Value);
             }
             catch (Exception e)
             {
-                Console.Error.WriteLine(e.Message);
+                result.AddError(e.Message);
             }
-        }
 
-        private static async Task SmartTrim(string src, string dst, Timecode start, Timecode end)
-        {
-            Console.Write("Finding keyframe...");
-
-            var keyframe_task = FindSplitFrameAfter(start, src);
-            var codecs_task = GetVideoEncoders(src);
-
-            var splitFrame = await keyframe_task.ConfigureAwait(false);
-            var codecs = await codecs_task.ConfigureAwait(false);
-
-            Console.WriteLine("Done");
-
-            var encode_dst = Path.GetTempFileName();
-            var remux_dst = Path.GetTempFileName();
-
-            try
-            {
-                Console.Write("Encoding and remuxing...");
-
-                await Task.WhenAll([
-                    EncodeVideo(src, encode_dst, codecs, start, splitFrame.EncodeFrame),
-                    RemuxVideo(src, remux_dst, splitFrame.RemuxFrame, end),
-                    ]).ConfigureAwait(false);
-
-                Console.WriteLine("Done");
-                Console.Write("Merging clips...");
-
-                await Merge(encode_dst, remux_dst, src, start, end, dst);
-
-                Console.WriteLine("Done");
-                Console.WriteLine($"Your video is stored at {dst}");
-            }
-            finally
-            {
-                try
-                {
-                    File.Delete(encode_dst);
-                    File.Delete(remux_dst);
-                }
-                catch
-                {
-
-                }
-            }
+            return null;
         }
     }
 }

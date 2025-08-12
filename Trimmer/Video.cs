@@ -5,8 +5,151 @@ namespace Trimmer.Trimmer
     using StreamEncoder = (int Index, string Encoder);
     using SplitFrame = (Timecode EncodeFrame, Timecode RemuxFrame);
 
-    static class Video
+    class Video
     {
+        private bool inited = false;
+        private string container;
+        private IReadOnlyList<StreamEncoder> encoders;
+        private string path;
+
+        #pragma warning disable CS8618
+        public Video(string src)
+        #pragma warning restore CS8618
+        {
+            this.path = src;
+        }
+
+        private async Task init()
+        {
+            if (this.inited)
+            {
+                return;
+            }
+
+            if (!Path.Exists(this.path))
+            {
+                throw new ArgumentException("File is not found.");
+            }
+
+            var info = new ProcessStartInfo("ffprobe")
+            {
+                ArgumentList = {
+                    "-loglevel", "info",
+                    "-select_streams", "v",
+                    "-show_entries", "stream=index:stream_tags=encoder:format=filename,format_name",
+                    "-of", "compact=nokey=1",
+                    "-i", this.path,
+                },
+            };
+
+            (this.container, this.encoders) = await RunAndWaitAndThrowOnError(
+                info,
+                async (reader) =>
+                {
+                    var encoders = new List<StreamEncoder>();
+                    string? container = null;
+
+                    while (await reader.ReadLineAsync().ConfigureAwait(false) is not null and string line)
+                    {
+                        var parts = line.Split('|');
+
+                        switch (parts[0])
+                        {
+                            case "stream":
+                                var index = int.Parse(parts[1]);
+                                var encoder = parts[2][(parts[2].IndexOf(' ') + 1)..];
+                                encoders.Add((index, encoder));
+
+                                break;
+                            default:
+                                string ext = Path.GetExtension(parts[1]);
+                                var availableContainers = parts[2].Split(',');
+
+                                if (ext != string.Empty)
+                                {
+                                    var nodot = ext[1..];
+
+                                    if (availableContainers.Contains(nodot))
+                                    {
+                                        container = nodot;
+                                    }
+                                    else
+                                    {
+                                        container = availableContainers[0];
+                                    }
+                                }
+                                else
+                                {
+                                    container = availableContainers[0];
+                                }
+
+                                break;
+                        }
+                    }
+
+                    // I'm not sure if this is possible but sure.
+                    if (container is null)
+                    {
+                        throw new InvalidDataException("File does not contain any container.");
+                    }
+
+                    return (container, encoders.AsReadOnly());
+                }).ConfigureAwait(false);
+
+            this.inited = true;
+        }
+
+        public async Task SmartTrim(Timecode start, Timecode end, string dst)
+        {
+            if (start >= end)
+            {
+                throw new ArgumentException("The starting point must be before the ending.");
+            }
+
+            Console.Write("Finding keyframe...");
+
+            var initializeTask = this.init();
+            var splitFrameTask = this.FindSplitFrameAfter(start);
+
+            await initializeTask.ConfigureAwait(false);
+            var splitFrame = await splitFrameTask.ConfigureAwait(false);
+
+            Console.WriteLine("Done");
+
+            var encodeDst = Path.GetTempFileName();
+            var remuxDst = Path.GetTempFileName();
+
+            try
+            {
+                Console.Write("Encoding and remuxing...");
+
+                await Task.WhenAll([
+                    this.EncodeVideo(encodeDst, start, splitFrame.EncodeFrame),
+                    this.RemuxVideo(remuxDst, splitFrame.RemuxFrame, end),
+                    ]).ConfigureAwait(false);
+
+                Console.WriteLine("Done");
+                Console.Write("Merging clips...");
+
+                await Merge(encodeDst, remuxDst, start, end, dst).ConfigureAwait(false);
+
+                Console.WriteLine("Done");
+                Console.WriteLine($"Your video is stored at {dst}");
+            }
+            finally
+            {
+                try
+                {
+                    File.Delete(encodeDst);
+                    File.Delete(remuxDst);
+                }
+                catch
+                {
+
+                }
+            }
+        }
+
         // https://superuser.com/questions/554620/how-to-get-time-stamp-of-closest-keyframe-before-a-given-timestamp-with-ffmpeg
         // TODO: Handle cases where t >= video length.
         // TODO: Make it work for multiple video streams.
@@ -15,14 +158,13 @@ namespace Trimmer.Trimmer
         /// after a timecode inclusively.
         /// </summary>
         /// <param name="from">The timecode.</param>
-        /// <param name="src">The path of the video file.</param>
         /// <returns>
         /// A Task represents the timecode of the keyframe.
         /// </returns>
         /// <exception cref="InvalidDataException">
         /// No keyframe is found.
         /// </exception>
-        internal static async Task<SplitFrame> FindSplitFrameAfter(Timecode from, string src)
+        private async Task<SplitFrame> FindSplitFrameAfter(Timecode from)
         {
             var info = new ProcessStartInfo("ffprobe")
             {
@@ -32,7 +174,7 @@ namespace Trimmer.Trimmer
                     "-select_streams", "v",
                     "-show_entries", "packet=pts_time,flags",
                     "-of", "compact=nokey=1",
-                    "-i", src,
+                    "-i", this.path,
                 },
             };
 
@@ -44,7 +186,7 @@ namespace Trimmer.Trimmer
                     Timecode? keyframe = null;
                     const int checkPacketRange = 10;
 
-                    while (await reader.ReadLineAsync() is not null and string line)
+                    while (await reader.ReadLineAsync().ConfigureAwait(false) is not null and string line)
                     {
                         string[] parts = line.Split('|');
                         timecodeBeforeKeyframe.Enqueue(parts[1]);
@@ -84,7 +226,7 @@ namespace Trimmer.Trimmer
                         }
                     }
 
-                    for (int i = 0; i < checkPacketRange && await reader.ReadLineAsync() is not null and string line; i++)
+                    for (int i = 0; i < checkPacketRange && await reader.ReadLineAsync().ConfigureAwait(false) is not null and string line; i++)
                     {
                         var timestamp = line.Split('|')[1];
                         var timecode = Timecode.OfSecond(double.Parse(timestamp));
@@ -97,49 +239,9 @@ namespace Trimmer.Trimmer
 
                     return (max, keyframe);
                 }
-            );
+            ).ConfigureAwait(false);
 
             return frames ?? throw new InvalidDataException($"Unable to find a split point after {from}.");
-        }
-
-        internal static async Task<List<StreamEncoder>> GetVideoEncoders(string src)
-        {
-            var info = new ProcessStartInfo("ffprobe")
-            {
-                ArgumentList = {
-                    "-loglevel", "info",
-                    "-select_streams", "v",
-                    "-show_entries", "stream=index,codec_type:stream_tags=encoder",
-                    "-of", "compact=nokey=1",
-                    "-i", src,
-                },
-            };
-
-            var codecs = await RunAndWaitAndThrowOnError(
-                info: info,
-                func: async (reader) =>
-                {
-                    var encoders = new List<StreamEncoder>();
-
-                    while (await reader.ReadLineAsync() is not null and string line)
-                    {
-                        // Sample Line for HEVC: 
-                        // stream|0|video|Lavc61.19.101 libx265
-                        var parts = line.Split("|");
-
-                        if (parts[2] == "video")
-                        {
-                            var streamIndex = int.Parse(parts[1]);
-                            var encoder = parts[3][(parts[3].IndexOf(' ') + 1)..];
-                            encoders.Add((streamIndex, encoder));
-                        }
-                    }
-
-                    return encoders;
-                }
-            );
-
-            return codecs;
         }
 
         /// <summary>
@@ -156,7 +258,7 @@ namespace Trimmer.Trimmer
         /// <param name="from">The start timecode for encoding.</param>
         /// <param name="to">The end timecode for encoding.</param>
         /// <returns></returns>
-        internal static async Task EncodeVideo(string src, string dst, IList<StreamEncoder> encoders, Timecode from, Timecode to)
+        private async Task EncodeVideo(string dst, Timecode from, Timecode to)
         {
             var info = new ProcessStartInfo("ffmpeg")
             {
@@ -175,11 +277,11 @@ namespace Trimmer.Trimmer
             }
 
             Array.ForEach([
-                "-i", src,
-                "-f", await GetContainer(src),
+                "-i", this.path,
+                "-f", this.container,
             ], info.ArgumentList.Add);
 
-            foreach (var c in encoders)
+            foreach (var c in this.encoders)
             {
                 info.ArgumentList.Add($"-c:{c.Index}");
                 info.ArgumentList.Add(c.Encoder);
@@ -190,14 +292,14 @@ namespace Trimmer.Trimmer
                 dst,
             ], info.ArgumentList.Add);
 
-            await RunAndWaitAndThrowOnError(info);
+            await RunAndWaitAndThrowOnError(info).ConfigureAwait(false);
         }
 
         /// <summary>
         /// Remux a video with FFmpeg.
         /// The paremeters are the same as <c>Encode()</c>.
         /// </summary>
-        internal static async Task RemuxVideo(string src, string dst, Timecode from, Timecode to)
+        private async Task RemuxVideo(string dst, Timecode from, Timecode to)
         {
             var info = new ProcessStartInfo("ffmpeg");
 
@@ -215,14 +317,14 @@ namespace Trimmer.Trimmer
             }
 
             Array.ForEach([
-                "-i", src,
-                "-f", await GetContainer(src),
+                "-i", this.path,
+                "-f", this.container,
                 "-c", "copy",
                 "-map", "v",
                 dst,
             ], info.ArgumentList.Add);
 
-            await RunAndWaitAndThrowOnError(info);
+            await RunAndWaitAndThrowOnError(info).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -243,7 +345,7 @@ namespace Trimmer.Trimmer
         /// The destination path of the concatenated video
         /// </param>
         /// <returns></returns>
-        internal static async Task Merge(string encodeVideoPath, string remuxVideoPath, string originalVideoPath, Timecode from, Timecode to, string dst)
+        private async Task Merge(string encodeVideoPath, string remuxVideoPath, Timecode from, Timecode to, string dst)
         {
             var infoPath = Path.GetTempFileName();
             var intermediatePath = Path.GetTempFileName();
@@ -257,10 +359,8 @@ namespace Trimmer.Trimmer
                     ffconcat version 1.0
                     file '{encodeVideoPath}'
                     file '{remuxVideoPath}'
-                    """);
+                    """).ConfigureAwait(false);
                 }
-
-                string outputContainer = await GetContainer(dst);
 
                 var info = new ProcessStartInfo("ffmpeg")
                 {
@@ -273,12 +373,12 @@ namespace Trimmer.Trimmer
                         "-i", infoPath,
                         "-c", "copy",
                         "-map", "0:v",
-                        "-f", outputContainer,
+                        "-f", this.container,
                         intermediatePath,
                     },
                 };
 
-                await RunAndWaitAndThrowOnError(info);
+                await RunAndWaitAndThrowOnError(info).ConfigureAwait(false);
 
                 info = new ProcessStartInfo("ffmpeg")
                 {
@@ -298,16 +398,16 @@ namespace Trimmer.Trimmer
                 }
 
                 Array.ForEach([
-                    "-i", originalVideoPath,
+                    "-i", this.path,
                     "-c:v", "copy",
                     "-map", "0:v",
                     "-map", "1:a?",
                     "-map", "1:s?",
-                    "-f", outputContainer,
+                    "-f", this.container,
                     dst,
                 ], info.ArgumentList.Add);
 
-                await RunAndWaitAndThrowOnError(info);
+                await RunAndWaitAndThrowOnError(info).ConfigureAwait(false);
             }
             finally
             {
@@ -333,13 +433,13 @@ namespace Trimmer.Trimmer
 
             using (var process = Process.Start(info)!)
             {
-                var res = await func(process.StandardOutput);
+                var res = await func(process.StandardOutput).ConfigureAwait(false);
 
                 // Close the stream to prevent deadlock.
                 // See https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.standardoutput?view=net-9.0#remarks
                 process.StandardOutput.Close();
 
-                await WaitAndThrowOnError(process, info.FileName);
+                await WaitAndThrowOnError(process, info.FileName).ConfigureAwait(false);
 
                 return res;
             }
@@ -356,7 +456,7 @@ namespace Trimmer.Trimmer
 
             using (var process = Process.Start(info)!)
             {
-                await WaitAndThrowOnError(process, info.FileName);
+                await WaitAndThrowOnError(process, info.FileName).ConfigureAwait(false);
             }
         }
 
@@ -377,49 +477,14 @@ namespace Trimmer.Trimmer
             // otherwise deadlock might occur.
             //
             // See https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.standardoutput?view=net-9.0#remarks
-            string err = await process.StandardError.ReadToEndAsync();
+            string err = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
 
-            Console.WriteLine(err);
-
-            await process.WaitForExitAsync();
+            await process.WaitForExitAsync().ConfigureAwait(false);
 
             if (process.ExitCode != 0)
             {
                 throw new InvalidDataException($"{processName} failed:\n{err}");
             }
-        }
-
-        /// <summary>
-        /// Get the container (format) of a video file.
-        /// It will try to deduce from filename, otherwise
-        /// use ffprobe to get the first available container.
-        /// </summary>
-        private static async Task<string> GetContainer(string src)
-        {
-            if (Path.HasExtension(src))
-            {
-                return Path.GetExtension(src)[1..];
-            }
-
-            var info = new ProcessStartInfo("ffprobe")
-            {
-                ArgumentList = {
-                    "-loglevel", "quiet",
-                    "-i", src,
-                    "-show_entries", "stream=index,codec_type:stream_tags=encoder",
-                    "-of compact=nokey=1",
-                }
-            };
-
-            string format = await RunAndWaitAndThrowOnError(
-                info: info,
-                func: async (reader) =>
-                {
-                    var line = (await reader.ReadLineAsync())!;
-                    return line[line.IndexOf('|')..line.IndexOf(',')];
-                });
-
-            return format;
         }
     }
 }
