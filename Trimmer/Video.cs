@@ -199,7 +199,7 @@ namespace Trimmer.Trimmer
                         // Flag K is Keyframe
                         if (parts[2] == "K__")
                         {
-                            double timestamp = double.Parse(parts[1]);
+                            decimal timestamp = decimal.Parse(parts[1]);
                             keyframe = Timecode.OfSecond(timestamp);
 
                             if (keyframe > from)
@@ -218,7 +218,7 @@ namespace Trimmer.Trimmer
 
                     while (timecodeBeforeKeyframe.TryDequeue(out string? s))
                     {
-                        var timecode = Timecode.OfSecond(double.Parse(s!));
+                        var timecode = Timecode.OfSecond(decimal.Parse(s!));
 
                         if (timecode < keyframe && timecode > max)
                         {
@@ -229,7 +229,7 @@ namespace Trimmer.Trimmer
                     for (int i = 0; i < checkPacketRange && await reader.ReadLineAsync().ConfigureAwait(false) is not null and string line; i++)
                     {
                         var timestamp = line.Split('|')[1];
-                        var timecode = Timecode.OfSecond(double.Parse(timestamp));
+                        var timecode = Timecode.OfSecond(decimal.Parse(timestamp));
 
                         if (timecode < keyframe && timecode > max)
                         {
