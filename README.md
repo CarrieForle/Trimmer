@@ -1,4 +1,4 @@
-# Trimmer
+# <img src="res/logo.ico" width="48"> Trimmer
 
 Trimmer is a CLI tool to produce video clips with smart-encoding. This means minimizing re-encoding while doing streamcopy as much as possible. This allows to produce clips with minimal quality drop.
 
@@ -22,4 +22,5 @@ Install .NET 9. Clone the repo and run:
 
 ```
 dotnet run
+
 ```
