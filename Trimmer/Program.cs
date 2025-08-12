@@ -57,6 +57,12 @@ namespace Trimmer.Trimmer
                 var start = ParseResult.GetValue(fromOpt)!;
                 var end = ParseResult.GetValue(toOpt)!;
 
+                if (start == Timecode.Zero() && end == Timecode.End())
+                {
+                    Console.Error.WriteLine("You must specify one of '--start' or '--end'.");
+                    return;
+                }
+
                 var src = ParseResult.GetValue(srcArg)!;
                 var dst = ParseResult.GetValue(outputArg)!;
 
