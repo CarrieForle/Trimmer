@@ -6,24 +6,21 @@ namespace Trimmer.Trimmer
     {
         private readonly string timecode;
         private static readonly Timecode zero = new(0);
-        private static readonly Timecode end = new(decimal.MaxValue);
+        private static readonly Timecode end = new(decimal.MaxValue, false);
         private readonly decimal second;
 
-        private string GenerateTimecodeString()
-        {
-            checked
-            {
-                ulong hour = (ulong)(this.second / 3600);
-                int min = (int)(this.second / 60 % 60);
-
-                return $"{hour:D2}:{min:D2}:{this.second % 60:0.######}";
-            }
-        }
-
-        private Timecode(decimal second)
+        private Timecode(decimal second, bool genString = true)
         {
             this.second = second;
-            this.timecode = GenerateTimecodeString();
+
+            if (genString)
+            {
+                this.timecode = GenerateTimecodeString();
+            }
+            else
+            {
+                this.timecode = "";
+            }
         }
 
         public Timecode(string timecode)
@@ -76,6 +73,17 @@ namespace Trimmer.Trimmer
             }
 
             this.timecode = GenerateTimecodeString();
+        }
+
+        private string GenerateTimecodeString()
+        {
+            checked
+            {
+                ulong hour = (ulong)(this.second / 3600);
+                int min = (int)(this.second / 60 % 60);
+
+                return $"{hour:D2}:{min:D2}:{this.second % 60:0.######}";
+            }
         }
 
         public static Timecode Zero()
@@ -141,7 +149,10 @@ namespace Trimmer.Trimmer
                 throw new ArgumentException("Second is negative.");
             }
 
-            return new Timecode(second);
+            var timecode = new Timecode(second);
+            timecode.GenerateTimecodeString();
+
+            return timecode;
         }
 
         [GeneratedRegex(@"^(?:([0-9]{1,2}):)?(?:([0-5]?[0-9]):)?((?:[0-5]?[0-9])(?:\.[0-9]{1,6})?)$")]
