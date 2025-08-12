@@ -371,22 +371,6 @@ namespace Trimmer.Trimmer
                         "-f", "concat",
                         "-safe", "0",
                         "-i", infoPath,
-                        "-c", "copy",
-                        "-map", "0:v",
-                        "-f", this.container,
-                        intermediatePath,
-                    },
-                };
-
-                await RunAndWaitAndThrowOnError(info).ConfigureAwait(false);
-
-                info = new ProcessStartInfo("ffmpeg")
-                {
-                    ArgumentList = {
-                        "-benchmark",
-                        "-loglevel", "info",
-                        "-y",
-                        "-i", intermediatePath,
                         "-ss", from.ToString(),
                     },
                 };
@@ -399,7 +383,7 @@ namespace Trimmer.Trimmer
 
                 Array.ForEach([
                     "-i", this.path,
-                    "-c:v", "copy",
+                    "-c", "copy",
                     "-map", "0:v",
                     "-map", "1:a?",
                     "-map", "1:s?",
@@ -414,7 +398,6 @@ namespace Trimmer.Trimmer
                 try
                 {
                     File.Delete(infoPath);
-                    File.Delete(intermediatePath);
                 }
                 catch
                 {
