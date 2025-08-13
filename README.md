@@ -28,6 +28,8 @@ The timestamp format:
 [HH:][MM:]SS[.m...]
 ```
 
+You are expected to use an external media player to get the timestamp before using Trimmer. Trimmer does not provide a previewer nor media player.
+
 # Build
 
 Install .NET 9. Clone the repo and run:
