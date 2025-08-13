@@ -16,6 +16,18 @@ Note both clips contain only video streams.
 
 It then concatenate the clips with [concat muxer](https://ffmpeg.org/ffmpeg-formats.html#concat-1), which allows to concatenate multiple videos with streamcopy. It also cuts and maps the audio streams from the original video.
 
+# Usage
+
+```
+Trimmer --start 01:30 --to 02:45.5 source.mp4 destination.mp4
+```
+
+The timestamp format:
+
+```
+[HH:][MM:]SS[.m...]
+```
+
 # Build
 
 Install .NET 9. Clone the repo and run:
