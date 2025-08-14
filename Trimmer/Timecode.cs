@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace Trimmer.Trimmer
@@ -25,6 +26,33 @@ namespace Trimmer.Trimmer
 
         public Timecode(string timecode)
         {
+            if (timecode.StartsWith("S+"))
+            {
+                checked
+                {
+                    if (timecode.EndsWith("ms"))
+                    {
+                        this.second = decimal.Parse(timecode[2..^2], NumberStyles.AllowDecimalPoint) * 1e-3m;
+                    }
+                    else if (timecode.EndsWith("us"))
+                    {
+                        this.second = decimal.Parse(timecode[2..^2], NumberStyles.AllowDecimalPoint) * 1e-6m;
+                    }
+                    else if (timecode.EndsWith('s'))
+                    {
+                        this.second = decimal.Parse(timecode[2..^1], NumberStyles.AllowDecimalPoint);
+                    }
+                    else
+                    {
+                        this.second = decimal.Parse(timecode[2..], NumberStyles.AllowDecimalPoint);
+                    }
+                }
+
+                this.timecode = GenerateTimecodeString();
+                
+                return;
+            }
+
             var match = TimecodeRegex().Match(timecode);
 
             if (!match.Success)
