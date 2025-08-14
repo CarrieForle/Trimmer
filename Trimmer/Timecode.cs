@@ -29,7 +29,7 @@ namespace Trimmer.Trimmer
 
             if (!match.Success)
             {
-                throw new Exception("Invalid timecode.");
+                throw new ArgumentException("Invalid timecode.");
             }
             
             List<int> parts = [0, 0];
