@@ -2,14 +2,14 @@ using System.Diagnostics;
 
 namespace Trimmer.Trimmer
 {
-    using StreamEncoder = (int Index, string Encoder);
+    using StreamMetadata = (uint Index, uint Bitrate, string Encoder);
     using SplitFrame = (Timecode EncodeFrame, Timecode RemuxFrame);
 
     class Video
     {
         private bool inited = false;
         private string container;
-        private IReadOnlyList<StreamEncoder> encoders;
+        private IReadOnlyList<StreamMetadata> encoders;
         private string path;
 
         #pragma warning disable CS8618
@@ -36,7 +36,7 @@ namespace Trimmer.Trimmer
                 ArgumentList = {
                     "-loglevel", "info",
                     "-select_streams", "v",
-                    "-show_entries", "stream=index:stream_tags=encoder:format=filename,format_name",
+                    "-show_entries", "stream=index,bit_rate:stream_tags=encoder:format=filename,format_name",
                     "-of", "compact=nokey=1",
                     "-i", this.path,
                 },
@@ -46,7 +46,7 @@ namespace Trimmer.Trimmer
                 info,
                 async (reader) =>
                 {
-                    var encoders = new List<StreamEncoder>();
+                    var encoders = new List<StreamMetadata>();
                     string? container = null;
 
                     while (await reader.ReadLineAsync().ConfigureAwait(false) is not null and string line)
@@ -56,9 +56,10 @@ namespace Trimmer.Trimmer
                         switch (parts[0])
                         {
                             case "stream":
-                                var index = int.Parse(parts[1]);
-                                var encoder = parts[2][(parts[2].IndexOf(' ') + 1)..];
-                                encoders.Add((index, encoder));
+                                var index = uint.Parse(parts[1]);
+                                var bitrate = uint.Parse(parts[2]);
+                                var encoder = parts[3][(parts[3].IndexOf(' ') + 1)..];
+                                encoders.Add((index, bitrate, encoder));
 
                                 break;
                             default:
@@ -278,16 +279,18 @@ namespace Trimmer.Trimmer
 
             Array.ForEach([
                 "-i", this.path,
-                "-f", this.container,
             ], info.ArgumentList.Add);
 
             foreach (var c in this.encoders)
             {
-                info.ArgumentList.Add($"-c:{c.Index}");
-                info.ArgumentList.Add(c.Encoder);
+                Array.ForEach([
+                    $"-c:{c.Index}", c.Encoder,
+                    $"-b:{c.Index}", c.Bitrate.ToString(),
+                ], info.ArgumentList.Add);
             }
-
+            
             Array.ForEach([
+                "-f", this.container,
                 "-map", "v",
                 dst,
             ], info.ArgumentList.Add);
